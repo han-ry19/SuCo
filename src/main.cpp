@@ -199,7 +199,7 @@ int main (int argc, char **argv)
     if (load_index == 0) {
         cout << "The indexing time is: " << index_time / 1000.0 << "ms." << endl;
     }
-    cout << "The indexing footprint is: " << RSS_after_indexing - RSS_before_indexing << "MB" << endl;
+    cout << "The indexing footprint is: " << static_cast<ssize_t>(RSS_after_indexing - RSS_before_indexing) << "MB" << endl;
     cout << "The average query time is " << query_time / query_size / 1000.0 << "ms." << endl;
     
     // Evaluate the query accuracy (recall and ratio)

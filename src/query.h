@@ -6,6 +6,8 @@
 #include <unordered_map>
 #include <omp.h>
 #include <sys/time.h>
+#include <boost/accumulators/statistics.hpp>
+#include <boost/accumulators/accumulators.hpp>                              
 
 #include "dist_calculation.h"
 #include "utils.h"

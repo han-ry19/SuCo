@@ -6,9 +6,25 @@ void ann_query(float ** &dataset, int ** &queryknn_results, long int dataset_siz
     progress_display pd_query(query_size);
 
     vector<unsigned char> collision_count(dataset_size, 0);
-    
+
     for (int i = 0; i < query_size; i++) {
         gettimeofday(&start_query, NULL);
+
+    //     double *  average_dist_subspace = new double[subspace_num];
+    //     double *  kahan_error = new double[subspace_num];
+    //     for (int i = 0; i < subspace_num; i++) {
+    //         average_dist_subspace[i] = 0.0f;
+    //         kahan_error[i] = 0.0f;
+    // }
+
+        vector<float> average_dist_subspace(subspace_num, 0.0f);
+        vector<int> average_dist_count(subspace_num, 0);
+        unsigned char ** collision_inside = new unsigned char * [dataset_size];
+        for(int k = 0; k < dataset_size; k++)
+        {
+            collision_inside[k] = new unsigned char[subspace_num];
+            fill(collision_inside[k], collision_inside[k] + subspace_num, 0);
+        }
 
         for (int j = 0; j < subspace_num; j++) {
             // first half dist
@@ -21,6 +37,8 @@ void ann_query(float ** &dataset, int ** &queryknn_results, long int dataset_siz
             vector<int> first_half_idx(kmeans_num_centroid);
             iota(first_half_idx.begin(), first_half_idx.end(), 0);
             sort(first_half_idx.begin(), first_half_idx.end(), [&first_half_dists](int i1, int i2) {return first_half_dists[i1] < first_half_dists[i2];});
+
+                
 
             // second half dist
             vector<float> second_half_dists(kmeans_num_centroid);
@@ -39,13 +57,39 @@ void ann_query(float ** &dataset, int ** &queryknn_results, long int dataset_siz
             dynamic_activate(indexes, retrieved_cell, first_half_dists, first_half_idx, second_half_dists, second_half_idx, collision_num, kmeans_num_centroid, j);
 
             // count collision, parallelization here is recommended for large datasets (greater than 10 million) rather than small datasets (less than 1 million)
-            #pragma omp parallel for num_threads(number_of_threads)
+            // #pragma omp parallel for num_threads(number_of_threads)
             for (int z = 0; z < retrieved_cell.size(); z++) {
                 auto iterator = indexes[j].find(retrieved_cell[z]);
+
+                average_dist_subspace[j] += (first_half_dists[retrieved_cell[z].first] + second_half_dists[retrieved_cell[z].second]) * iterator->second.size();
+                average_dist_count[j] += iterator->second.size();
+
                 for (int t = 0; t < iterator->second.size(); t++) {
                     collision_count[iterator->second[t]]++;
+                    collision_inside[iterator->second[t]][j] = 1; // mark the collision inside
+                    // Kahan summation to avoid numerical errors
                 }
             }
+        }
+
+        // Brute force calculating distance
+        for(int j = 0; j < subspace_num; j++) {
+            if (average_dist_count[j] > 0) {
+                average_dist_subspace[j] = average_dist_subspace[j] / average_dist_count[j];
+            } else {
+                average_dist_subspace[j] = 0.0f;
+            }
+        }
+
+        // assuming every subspace has its unique weight, using the reciprocal of the average distance as the weight
+        // this is a simple heuristic, more sophisticated methods can be applied
+        // to calculate the weight of each subspace, such as using the variance of the distances
+        // or using the distance distribution of the dataset in each subspace
+
+        float * weight_subspace  = new float[subspace_num];
+        float eps = 1e-6;
+        for(int j = 0; j < subspace_num; j++) {
+            weight_subspace[j] = 1.0f / (average_dist_subspace[j] + eps);
         }
 
         int * collision_num_count = new int[subspace_num + 1]();
@@ -83,6 +127,25 @@ void ann_query(float ** &dataset, int ** &queryknn_results, long int dataset_siz
             }
         }
         delete[] collision_num_count;
+
+        vector<float> candidate_weight(dataset_size, 0.0f);
+        vector<int> candidate_w_idx(dataset_size, 0);
+
+        for(int j = 0; j < dataset_size; j++)
+        {
+            for(int k = 0; k < subspace_num; k++)
+            {
+                if (collision_inside[j][k] == 1) {
+                    candidate_weight[j] += weight_subspace[k];
+                }
+            }
+        }
+
+        iota(candidate_w_idx.begin(), candidate_w_idx.end(), 0);
+        sort(candidate_w_idx.begin(), candidate_w_idx.end(), [&candidate_weight](int i1, int i2) {return candidate_weight[i1] > candidate_weight[i2];});
+
+        vector<int> candidate_w_idx_remnant(candidate_num, 0);
+        candidate_w_idx_remnant.insert(candidate_w_idx_remnant.begin(), candidate_w_idx.begin(), candidate_w_idx.begin() + candidate_num);
 
         vector<int> candidate_idx;
         vector<vector<int>> local_candidate_idx(number_of_threads);
@@ -135,15 +198,42 @@ void ann_query(float ** &dataset, int ** &queryknn_results, long int dataset_siz
         gettimeofday(&end_query, NULL);
         query_time += (1000000 * (end_query.tv_sec - start_query.tv_sec) + end_query.tv_usec - start_query.tv_usec);
 
+        vector<float> candidate_w_dists(candidate_w_idx_remnant.size());
+
+        for (int j = 0; j < candidate_w_idx_remnant.size(); j++) {
+            // candidate_dists[j] = euclidean_distance(querypoints[i], dataset[candidate_idx[j]], data_dimensionality);
+            // candidate_dists[j] = euclidean_distance_SIMD(querypoints[i], dataset[candidate_idx[j]], data_dimensionality);
+            candidate_w_dists[j] = faiss::fvec_L2sqr_avx512(querypoints[i], dataset[candidate_w_idx_remnant[j]], data_dimensionality);
+        }
+        vector<int> candidate_sort_w_idx(candidate_w_idx_remnant.size());
+        iota(candidate_sort_w_idx.begin(), candidate_sort_w_idx.end(), 0);
+        partial_sort(candidate_sort_w_idx.begin(), candidate_sort_w_idx.begin() + k_size, candidate_sort_w_idx.end(), [&candidate_w_dists](int i1, int i2){return candidate_w_dists[i1] < candidate_w_dists[i2];});
+
+
+
+        // for (int j = 0; j < k_size; j++) {
+        //     queryknn_results[i][j] = candidate_idx[candidate_sort_idx[j]];
+        // }
         for (int j = 0; j < k_size; j++) {
-            queryknn_results[i][j] = candidate_idx[candidate_sort_idx[j]];
+            queryknn_results[i][j] = candidate_w_idx_remnant[candidate_sort_w_idx[j]];
         }
 
         fill(collision_count.begin(), collision_count.end(), 0);
 
         // cout << "Finish the " << i + 1 << "-th query." << endl;
         ++pd_query;
+        // delete[] average_dist_subspace;
+        delete[] weight_subspace;  
+        for(int k = 0; k < dataset_size; k++)
+        {
+            delete[] collision_inside[k];
+        }
+        delete[] collision_inside;
+        // delete[] kahan_error;
+
     }
+
+
 }
 
 
