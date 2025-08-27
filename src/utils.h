@@ -1,5 +1,6 @@
 #pragma once
 #include <iostream>
+#include <stdio.h>
 #include <sys/sysinfo.h>
 #include <mutex>
 #include <atomic>

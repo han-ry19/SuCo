@@ -1,11 +1,12 @@
 #include "query.h"
 
-void ann_query(float ** &dataset, int ** &queryknn_results, long int dataset_size, int data_dimensionality, int query_size, int k_size, float ** &querypoints, vector<unordered_map<pair<int, int>, vector<int>, hash_pair>> &indexes, float * &centroids_list, int subspace_num, int subspace_dimensionality, int kmeans_num_centroid, int kmeans_dim, int collision_num, int candidate_num, int number_of_threads, long int &query_time) {
+void ann_query(float ** &dataset, int ** &queryknn_results, long int dataset_size, int data_dimensionality, int query_size, int k_size, float ** &querypoints, vector<unordered_map<pair<int, int>, vector<int>, hash_pair>> &indexes, float * &centroids_list, int subspace_num, int subspace_dimensionality, int kmeans_num_centroid, int kmeans_dim, int collision_num, int candidate_num, int number_of_threads, long int &query_time, float * &subspace_lid) {
     struct timeval start_query, end_query;
     
     progress_display pd_query(query_size);
 
     vector<unsigned char> collision_count(dataset_size, 0);
+    vector<float> subspace_weight_count(dataset_size, 0.0f);
     
     for (int i = 0; i < query_size; i++) {
         gettimeofday(&start_query, NULL);
@@ -45,45 +46,62 @@ void ann_query(float ** &dataset, int ** &queryknn_results, long int dataset_siz
                 auto iterator = indexes[j].find(retrieved_cell[z]);
                 for (int t = 0; t < iterator->second.size(); t++) {
                     collision_count[iterator->second[t]]++;
+                    subspace_weight_count[iterator->second[t]] += subspace_lid[j];
                 }
             }
         }
 
-        int * collision_num_count = new int[subspace_num + 1]();
-        int ** local_collision_num_count = new int * [number_of_threads];
-        for (int j = 0; j < number_of_threads; j++) {
-            local_collision_num_count[j] = new int [subspace_num + 1]();
-        }
 
-        #pragma omp parallel for num_threads(number_of_threads)
-        for (int j = 0; j < dataset_size; j++) {
-            int id = omp_get_thread_num();
-            local_collision_num_count[id][collision_count[j]]++;
-        }
 
-        for (int j = 0; j < subspace_num + 1; j++) {
-            for (int z = 0; z < number_of_threads; z++) {
-                collision_num_count[j] += local_collision_num_count[z][j];
-            }
-        }
+        
+        // int * collision_num_count = new int[subspace_num + 1]();
+        // int ** local_collision_num_count = new int * [number_of_threads];
+        // for (int j = 0; j < number_of_threads; j++) {
+        //     local_collision_num_count[j] = new int [subspace_num + 1]();
+        // }
 
-        for (int j = 0; j < number_of_threads; j++) {
-            delete[] local_collision_num_count[j];
-        }
-        delete[] local_collision_num_count;
+        // #pragma omp parallel for num_threads(number_of_threads)
+        // for (int j = 0; j < dataset_size; j++) {
+        //     int id = omp_get_thread_num();
+        //     local_collision_num_count[id][collision_count[j]]++;
+        // }
+
+        // for (int j = 0; j < subspace_num + 1; j++) {
+        //     for (int z = 0; z < number_of_threads; z++) {
+        //         collision_num_count[j] += local_collision_num_count[z][j];
+        //     }
+        // }
+
+        // for (int j = 0; j < number_of_threads; j++) {
+        //     delete[] local_collision_num_count[j];
+        // }
+        // delete[] local_collision_num_count;
 
         // release the candidate number to include all points in last_collision_num, saving the time for checking points whose collision_num_count is last_collision_num
-        int last_collision_num;
-        int sum_candidate = 0;
-        for (int j = subspace_num; j >= 0; j--) {
-            if (collision_num_count[j] <= candidate_num - sum_candidate) {
-                sum_candidate += collision_num_count[j];
-            } else {
-                last_collision_num = j;
-                break;
-            }
-        }
-        delete[] collision_num_count;
+        // int last_collision_num;
+        // int sum_candidate = 0;
+        // for (int j = subspace_num; j >= 0; j--) {
+        //     if (collision_num_count[j] <= candidate_num - sum_candidate) {
+        //         sum_candidate += collision_num_count[j];
+        //     } else {
+        //         last_collision_num = j;
+        //         break;
+        //     }
+        // }
+        // delete[] collision_num_count;
+
+
+        vector<int> subspace_weight_idx(dataset_size);
+        iota(subspace_weight_idx.begin(), subspace_weight_idx.end(), 0);
+        sort(subspace_weight_idx.begin(), subspace_weight_idx.end(), [&subspace_weight_count](int i1, int i2) {return subspace_weight_count[i1] > subspace_weight_count[i2];});
+
+        float last_candidate_weight = subspace_weight_count[subspace_weight_idx[candidate_num - 1]];
+
+        // for(int l = 0; l < dataset_size; l++) {
+        //     cout  << subspace_weight_idx[l] << ":" <<subspace_weight_count[subspace_weight_idx[l]] << " " << endl;
+        // }
+
+        // exit(1);
 
         vector<int> candidate_idx;
         vector<vector<int>> local_candidate_idx(number_of_threads);
@@ -92,7 +110,7 @@ void ann_query(float ** &dataset, int ** &queryknn_results, long int dataset_siz
         #pragma omp parallel for num_threads(number_of_threads)
         for (int j = 0; j < dataset_size; j++) {
             int id = omp_get_thread_num();
-            if (collision_count[j] >= last_collision_num) {
+            if (subspace_weight_count[j] >= last_candidate_weight) {
                 local_candidate_idx[id].push_back(j);
             }
         }
@@ -141,6 +159,7 @@ void ann_query(float ** &dataset, int ** &queryknn_results, long int dataset_siz
         }
 
         fill(collision_count.begin(), collision_count.end(), 0);
+        fill(subspace_weight_count.begin(), subspace_weight_count.end(), 0.0f);
 
         // cout << "Finish the " << i + 1 << "-th query." << endl;
         ++pd_query;
@@ -179,37 +198,37 @@ void dynamic_activate(vector<unordered_map<pair<int, int>, vector<int>, hash_pai
     }
 }
 
-void scalable_dynamic_activate(vector<unordered_map<pair<int, int>, vector<int>, hash_pair>> &indexes, vector<pair<int, int>> &retrieved_cell, vector<float> &first_half_dists, vector<int> &first_half_idx, vector<float> &second_half_dists, vector<int> &second_half_idx, int collision_num, int kmeans_num_centroid, int subspace_idx) {
-    priority_queue<pair<float, int>, vector<pair<float, int>>, Compare> activated_cell;
-    vector<int> activated_idx(kmeans_num_centroid, 0);
+// void scalable_dynamic_activate(vector<unordered_map<pair<int, int>, vector<int>, hash_pair>> &indexes, vector<pair<int, int>> &retrieved_cell, vector<float> &first_half_dists, vector<int> &first_half_idx, vector<float> &second_half_dists, vector<int> &second_half_idx, int collision_num, int kmeans_num_centroid, int subspace_idx) {
+//     priority_queue<pair<float, int>, vector<pair<float, int>>, Compare> activated_cell;
+//     vector<int> activated_idx(kmeans_num_centroid, 0);
 
-    int retrieved_num = 0;
-    activated_cell.push(pair<float, int>(first_half_dists[first_half_idx[0]] + second_half_dists[second_half_idx[0]], 0));
-    while (true) {
-        pair<float, int> selected_cell = activated_cell.top();
-        int cell_position = selected_cell.second;
-        auto iterator = indexes[subspace_idx].find(pair<int, int>(first_half_idx[cell_position], second_half_idx[activated_idx[cell_position]]));
-        if (iterator != indexes[subspace_idx].end()) {
-            retrieved_cell.push_back(pair<int, int>(first_half_idx[cell_position], second_half_idx[activated_idx[cell_position]]));
+//     int retrieved_num = 0;
+//     activated_cell.push(pair<float, int>(first_half_dists[first_half_idx[0]] + second_half_dists[second_half_idx[0]], 0));
+//     while (true) {
+//         pair<float, int> selected_cell = activated_cell.top();
+//         int cell_position = selected_cell.second;
+//         auto iterator = indexes[subspace_idx].find(pair<int, int>(first_half_idx[cell_position], second_half_idx[activated_idx[cell_position]]));
+//         if (iterator != indexes[subspace_idx].end()) {
+//             retrieved_cell.push_back(pair<int, int>(first_half_idx[cell_position], second_half_idx[activated_idx[cell_position]]));
 
-            retrieved_num += iterator->second.size();
+//             retrieved_num += iterator->second.size();
 
-            if (retrieved_num >= collision_num) {
-                break;
-            }
-        }
+//             if (retrieved_num >= collision_num) {
+//                 break;
+//             }
+//         }
 
-        if (activated_idx[cell_position] == 0 && cell_position < kmeans_num_centroid - 1) {
-            activated_cell.push(pair<float, int>(first_half_dists[first_half_idx[cell_position + 1]] + second_half_dists[second_half_idx[0]], cell_position + 1));
-        }
+//         if (activated_idx[cell_position] == 0 && cell_position < kmeans_num_centroid - 1) {
+//             activated_cell.push(pair<float, int>(first_half_dists[first_half_idx[cell_position + 1]] + second_half_dists[second_half_idx[0]], cell_position + 1));
+//         }
 
-        activated_cell.pop();
+//         activated_cell.pop();
 
-        if (cell_position < kmeans_num_centroid - 1) {
-            activated_idx[cell_position]++;
-            selected_cell.first = first_half_dists[first_half_idx[cell_position]] + second_half_dists[second_half_idx[activated_idx[cell_position]]];
-            activated_cell.push(selected_cell);
-        }
-    }
-}
+//         if (cell_position < kmeans_num_centroid - 1) {
+//             activated_idx[cell_position]++;
+//             selected_cell.first = first_half_dists[first_half_idx[cell_position]] + second_half_dists[second_half_idx[activated_idx[cell_position]]];
+//             activated_cell.push(selected_cell);
+//         }
+//     }
+// }
 

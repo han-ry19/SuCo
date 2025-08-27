@@ -29,7 +29,8 @@ int main (int argc, char **argv)
     static char * query_path;
     static char * groundtruth_path;
     static char * index_path;
-    
+    static char * subspace_lid_path;
+
     static long int dataset_size = 1000000;
     static int query_size = 100;
     static int k_size = 50;
@@ -45,6 +46,7 @@ int main (int argc, char **argv)
     static int kmeans_num_iters = 2;
 
     static int load_index=0;
+ 
 
     // Parse input
     while (1)
@@ -65,6 +67,7 @@ int main (int argc, char **argv)
             {"kmeans-num-centroid", required_argument, 0, 'm'},
             {"kmeans-num-iters", required_argument, 0, 'n'},
             {"load-index", no_argument, 0, 'o'},
+            {"subspace-lid" , required_argument, 0, 'p'},
             {NULL, 0, NULL, 0}
         };
 
@@ -110,6 +113,7 @@ int main (int argc, char **argv)
 
             case 'i':
             	subspace_dimensionality = atoi(optarg);
+                break;
 
             case 'j':
             	subspace_num = atoi(optarg);
@@ -134,6 +138,10 @@ int main (int argc, char **argv)
                 load_index = 1;
                 break;
 
+            case 'p':
+                subspace_lid_path = optarg;
+                break;
+
             default:
                 exit(-1);
                 break;
@@ -145,6 +153,20 @@ int main (int argc, char **argv)
     float ** dataset;
     load_data(dataset, dataset_path, dataset_size, data_dimensionality);
 
+    // Load subspace lids(testing purpose only)
+    float * subspace_lid = new float[subspace_num];
+    FILE* lid_file = fopen(subspace_lid_path, "r");
+    if (!lid_file) {
+        cout << "Error: cannot open subspace lid file!" << subspace_lid_path << endl;
+        exit(-1);
+    }
+    int idx;
+    for (int i = 0; i < subspace_num; i++) {
+        fscanf(lid_file, "Subspace %d mean LID: %f\n", &idx, &subspace_lid[i]);
+        cout << "Subspace " << i << " mean LID: " << subspace_lid[i] << endl;
+    }
+    
+    fclose(lid_file);
     // Load query
     float ** querypoints;
     load_query(querypoints, query_path, query_size, data_dimensionality);
@@ -194,7 +216,7 @@ int main (int argc, char **argv)
 
     int number_of_threads = get_nprocs_conf() / 2;
 
-    ann_query(dataset, queryknn_results, dataset_size, data_dimensionality, query_size, k_size, querypoints, indexes, centroids_list, subspace_num, subspace_dimensionality, kmeans_num_centroid, kmeans_dim, collision_num, candidate_num, number_of_threads, query_time);
+    ann_query(dataset, queryknn_results, dataset_size, data_dimensionality, query_size, k_size, querypoints, indexes, centroids_list, subspace_num, subspace_dimensionality, kmeans_num_centroid, kmeans_dim, collision_num, candidate_num, number_of_threads, query_time, subspace_lid);
     
     if (load_index == 0) {
         cout << "The indexing time is: " << index_time / 1000.0 << "ms." << endl;
