@@ -17,27 +17,38 @@ if __name__ == '__main__':
     cardinality = 1000000
     dim = 256
     filepath = '/home/dataset/deep1m-256/deep.bin'
-    querypath = '/home/jiuqi/MESSI-RangeQuery/benchmark/query_deep1m_size100.bin'
-    querynum = 100
-    query_k = 50
-    benchmarkpath = '/home/jiuqi/MESSI-RangeQuery/benchmark/benchmark_deep1m_size100_50knn.bin'
+    # querypath = '/home/jiuqi/MESSI-RangeQuery/benchmark/query_deep1m_size100.bin'
+    # querynum = 100
+    # query_k = 50
+    # benchmarkpath = '/home/jiuqi/MESSI-RangeQuery/benchmark/benchmark_deep1m_size100_50knn.bin'
     subspace_num = 8
-    subspace_dimensionality = 32
+    # subspace_dimensionality = 32
+    output_name = 'sub_lids_deep1m.txt'
 
-    if len(sys.argv) == 10:
+    if len(sys.argv) == 6:
         cardinality = int(sys.argv[1])
         dim = int(sys.argv[2])
         filepath = sys.argv[3]
-        querypath = sys.argv[4]
-        querynum = int(sys.argv[5])
-        query_k = int(sys.argv[6])
-        benchmarkpath = sys.argv[7]
-        subspace_num = int(sys.argv[8])
-        subspace_dimensionality = int(sys.argv[9])
-    elif len(sys.argv) != 10 and len(sys.argv) != 0:
+        # querypath = sys.argv[4]
+        # querynum = int(sys.argv[5])
+        # query_k = int(sys.argv[6])
+        # benchmarkpath = sys.argv[7]
+        subspace_num = int(sys.argv[4])
+        # subspace_dimensionality = int(sys.argv[9])
+        output_name = sys.argv[5]
+    elif len(sys.argv) != 6 and len(sys.argv) != 0:
         print('input error,input num is %d' %(len(sys.argv)))
         sys.exit(1)
     
+    subspace_dimensionality = dim // subspace_num
+    flag = 0
+    last_subspace_dimensionality = subspace_dimensionality
+    
+    if dim % subspace_num != 0:
+        flag = 1
+        last_subspace_dimensionality = dim % subspace_num
+        print('Warning: the last subspace dimensionality is %d' %(last_subspace_dimensionality))
+        
     # 读取数据
     data = np.fromfile(filepath, dtype=np.float32, count=cardinality*dim)
     print('Finish loading data and now reshape it')
@@ -60,6 +71,8 @@ if __name__ == '__main__':
     subspace_lids = []
 
     for k in range(subspace_num):
+        if k == subspace_num - 1 and flag == 1:
+            subspace_dimensionality = last_subspace_dimensionality
         start = k * subspace_dimensionality
         end = (k+1) * subspace_dimensionality
         subspace = data[:, start:end]  # shape = (dataset_size, subspace_dimensionality)
@@ -78,7 +91,7 @@ if __name__ == '__main__':
         
         print(f"Subspace {k} mean LID: {sub_lids}")
         
-    with open('subspace_lids.txt', 'w') as f:
+    with open(output_name, 'w') as f:
         for k in range(subspace_num):
             mean_lid = subspace_lids[k]   
             f.write(f"Subspace {k} mean LID: {mean_lid:.4f}\n")

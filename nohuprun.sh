@@ -1,0 +1,1 @@
+nohup ./runlid.sh > run_lid.log 2>&1 &
