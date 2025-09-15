@@ -5,6 +5,8 @@
 #include <armadillo>
 #include <unordered_map>
 #include <omp.h>
+#include <fstream>
+#include <string>
 #include <sys/time.h>
 #include <queue>
 

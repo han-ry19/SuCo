@@ -1,6 +1,6 @@
 #include "query.h"
 
-void ann_query(float ** &dataset, int ** &queryknn_results, long int dataset_size, int data_dimensionality, int query_size, int k_size, float ** &querypoints, vector<unordered_map<pair<int, int>, vector<int>, hash_pair>> &indexes, float * &centroids_list, int subspace_num, int subspace_dimensionality, int kmeans_num_centroid, int kmeans_dim, int collision_num, int candidate_num, int number_of_threads, long int &query_time, float * &subspace_lid) {
+void ann_query(float ** &dataset, int ** &queryknn_results, long int dataset_size, int data_dimensionality, int query_size, int k_size, float ** &querypoints, vector<unordered_map<pair<int, int>, vector<int>, hash_pair>> &indexes, float * &centroids_list, int subspace_num, int subspace_dimensionality, int kmeans_num_centroid, int kmeans_dim, int collision_num, int candidate_num, int number_of_threads, long int &query_time, float * &subspace_lid, string file_name) {
     struct timeval start_query, end_query;
     
     progress_display pd_query(query_size);
@@ -8,6 +8,10 @@ void ann_query(float ** &dataset, int ** &queryknn_results, long int dataset_siz
     vector<unsigned char> collision_count(dataset_size, 0);
     vector<float> subspace_weight_count(dataset_size, 0.0f);
     
+    // string file_name = "lid_weight_rank.txt";
+
+    ofstream outfile(file_name);
+    outfile << dataset_size << endl;
     for (int i = 0; i < query_size; i++) {
         gettimeofday(&start_query, NULL);
 
@@ -52,8 +56,27 @@ void ann_query(float ** &dataset, int ** &queryknn_results, long int dataset_siz
         }
 
 
+        vector<float> test_all_dist(dataset_size);
 
+        for (int j = 0; j < dataset_size; j++) {
+        // candidate_dists[j] = euclidean_distance(querypoints[i], dataset[candidate_idx[j]], data_dimensionality);
+        // candidate_dists[j] = euclidean_distance_SIMD(querypoints[i], dataset[candidate_idx[j]], data_dimensionality);
+        test_all_dist[j] = faiss::fvec_L2sqr_avx512(querypoints[i], dataset[j], data_dimensionality);
+        }
+
+
+        vector<int> test_idx(dataset_size);
+
+        iota(test_idx.begin(), test_idx.end(), 0);
+        sort(test_idx.begin(), test_idx.end(), [&test_all_dist](int i1, int i2) {return test_all_dist[i1] < test_all_dist[i2];});
+
+
+        for(int l = 0; l < dataset_size; l++) {
+            outfile << subspace_weight_count[test_idx[l]]<<endl;
+        }
         
+
+        // cout << "Test Result of LID weight complete. " << endl;
         // int * collision_num_count = new int[subspace_num + 1]();
         // int ** local_collision_num_count = new int * [number_of_threads];
         // for (int j = 0; j < number_of_threads; j++) {
@@ -164,6 +187,7 @@ void ann_query(float ** &dataset, int ** &queryknn_results, long int dataset_siz
         // cout << "Finish the " << i + 1 << "-th query." << endl;
         ++pd_query;
     }
+    outfile.close();
 }
 
 

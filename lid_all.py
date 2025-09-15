@@ -23,7 +23,7 @@ if __name__ == '__main__':
     # benchmarkpath = '/home/jiuqi/MESSI-RangeQuery/benchmark/benchmark_deep1m_size100_50knn.bin'
     subspace_num = 8
     # subspace_dimensionality = 32
-    output_name = 'sub_lids_deep1m.txt'
+    output_name = 'sub_lids_deep1m_all.txt'
 
     if len(sys.argv) == 6:
         cardinality = int(sys.argv[1])
@@ -55,6 +55,8 @@ if __name__ == '__main__':
     data = data.reshape(-1,dim)
     print('dataset size is [%d, %d]' %(len(data), len(data[0])))
 
+
+
     #estimate global intrinsic dimension
     # danco = skdim.id.DANCo().fit(data)
     # # print('Finish estimate global intrinsic dimension')
@@ -65,8 +67,8 @@ if __name__ == '__main__':
     #                             n_jobs = 128)
     
     # tle = skdim.id.TLE().fit(data, n_neighbors = 100, n_jobs = 128)
-    batch_size = 5000
-    dataset_size = data.shape[0]
+    # batch_size = 5000
+    # dataset_size = data.shape[0]
     
     subspace_lids = []
 
@@ -80,14 +82,13 @@ if __name__ == '__main__':
         print(f"\nCalculating LID for subspace {k} (shape={subspace.shape})")
         all_lids = []
 
-        for i in tqdm(range(0, dataset_size, batch_size), desc=f"LID batch progress (subspace {k})"):
-            batch = subspace[i:i+batch_size]
-            batch += np.random.normal(0, 1e-12, batch.shape)  # 添加微小噪声以避免数值问题
-            ess = skdim.id.ESS().fit(batch, n_jobs=64)
-            all_lids.append(ess.dimension_pw_)
+        # for i in tqdm(range(0, dataset_size, batch_size), desc=f"LID batch progress (subspace {k})"):
+        #     batch = subspace[i:i+batch_size]
+        ess = skdim.id.ESS().fit(subspace, n_jobs=64)
+        # all_lids.append(ess.dimension_pw_)
 
-        all_lids = np.concatenate(all_lids)
-        sub_lids = np.mean(all_lids)
+        # all_lids = np.concatenate(all_lids)
+        sub_lids = np.mean(ess.dimension_pw_)
         subspace_lids.append(sub_lids)
         
         print(f"Subspace {k} mean LID: {sub_lids}")
