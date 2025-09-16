@@ -1,2 +1,5 @@
 *.bin
 suco
+*.txt
+*.png
+*.log
