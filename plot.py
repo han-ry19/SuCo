@@ -5,7 +5,7 @@ import numpy as np
 
 if __name__ == '__main__':
     
-    dataset = "deep1m256"
+    dataset = "msong1m"
 
     iter = 100
 
