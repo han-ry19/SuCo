@@ -177,6 +177,9 @@ int main (int argc, char **argv)
         save_indexes(index_path, centroids_list, assignments_list, dataset_size, kmeans_dim, subspace_num, kmeans_num_centroid);
     }
 
+    vector<double> variances_list;
+    compute_subspace_variance(data_list, subspace_num, variances_list);
+
     delete []assignments_list;
     size_t RSS_after_indexing = getCurrentRSS() / 1000000; 
 

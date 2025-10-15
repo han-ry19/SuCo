@@ -28,6 +28,36 @@ void load_indexes(char * index_path, vector<unordered_map<pair<int, int>, vector
     fclose(ifile_index);
 }
 
+void compute_subspace_variance(
+    const vector<arma::mat> &data_list, 
+    int subspace_num, 
+    vector<double> &variances_list)
+{
+    variances_list.clear();
+
+    for (int subspace_index = 0; subspace_index < subspace_num; subspace_index++) {
+        arma::mat data_first = data_list[subspace_index * 2];
+        arma::mat data_second = data_list[subspace_index * 2 + 1];
+
+        // 合并两个半部分数据
+        arma::mat full_data(data_first.n_rows, data_first.n_cols + data_second.n_cols);
+        full_data.cols(0, data_first.n_cols - 1) = data_first;
+        full_data.cols(data_first.n_cols, full_data.n_cols - 1) = data_second;
+
+        // 计算每行（维度）均值
+        arma::rowvec mean_vec = arma::mean(full_data, 1);
+
+        // 计算每个元素到均值的平方差
+        arma::mat diff = full_data.each_col() - mean_vec;
+        double variance = arma::accu(diff % diff) / full_data.n_elem;  // 全局方差
+
+        variances_list.push_back(variance);
+
+        std::cout << "Subspace " << subspace_index << " variance = " << variance << std::endl;
+    }
+}
+
+
 
 void gen_indexes(vector<arma::mat> data_list, vector<unordered_map<pair<int, int>, vector<int>, hash_pair>> &indexes, long int dataset_size, float * centroids_list, int * assignments_list, int kmeans_dim, int subspace_num, int kmeans_num_centroid, int kmeans_num_iters, long int &index_time) {
     struct timeval start_index, end_index;
