@@ -5,3 +5,4 @@
 suco
 test/
 *.sh
+.vscode/
