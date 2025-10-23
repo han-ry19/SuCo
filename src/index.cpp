@@ -40,16 +40,14 @@ void compute_subspace_variance(
         arma::mat data_second = data_list[subspace_index * 2 + 1];
 
         // 合并两个半部分数据
-        arma::mat full_data(data_first.n_rows, data_first.n_cols + data_second.n_cols);
-        full_data.cols(0, data_first.n_cols - 1) = data_first;
-        full_data.cols(data_first.n_cols, full_data.n_cols - 1) = data_second;
+        arma::mat full_data = arma::join_vert(data_first, data_second).t(); 
 
-        // 计算每行（维度）均值
-        arma::rowvec mean_vec = arma::mean(full_data, 1);
+        arma::rowvec mean_vec = arma::mean(full_data, 0);
 
-        // 计算每个元素到均值的平方差
-        arma::mat diff = full_data.each_col() - mean_vec;
-        double variance = arma::accu(diff % diff) / full_data.n_elem;  // 全局方差
+        arma::mat diff = full_data - arma::repmat(mean_vec, full_data.n_rows, 1); 
+        arma::vec squared_distances = arma::pow(sum(arma::pow(diff, 2), 1),0.5); 
+        double mean_distance = arma::mean(squared_distances);
+        double variance = arma::mean(arma::pow(squared_distances - mean_distance, 2));
 
         variances_list.push_back(variance);
 
