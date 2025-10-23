@@ -6,7 +6,12 @@ void ann_query(float ** &dataset, int ** &queryknn_results, long int dataset_siz
     progress_display pd_query(query_size);
 
     vector<unsigned char> collision_count(dataset_size, 0);
+    vector<float> subspace_weight_count(dataset_size, 0.0f);
     
+    // string file_name = "variance_weight_rank.txt";
+
+    // ofstream outfile(file_name);
+    // outfile << dataset_size << endl;
     for (int i = 0; i < query_size; i++) {
         gettimeofday(&start_query, NULL);
 
@@ -45,45 +50,81 @@ void ann_query(float ** &dataset, int ** &queryknn_results, long int dataset_siz
                 auto iterator = indexes[j].find(retrieved_cell[z]);
                 for (int t = 0; t < iterator->second.size(); t++) {
                     collision_count[iterator->second[t]]++;
+                    subspace_weight_count[iterator->second[t]] += variances_list[j];
                 }
             }
         }
 
-        int * collision_num_count = new int[subspace_num + 1]();
-        int ** local_collision_num_count = new int * [number_of_threads];
-        for (int j = 0; j < number_of_threads; j++) {
-            local_collision_num_count[j] = new int [subspace_num + 1]();
-        }
 
-        #pragma omp parallel for num_threads(number_of_threads)
-        for (int j = 0; j < dataset_size; j++) {
-            int id = omp_get_thread_num();
-            local_collision_num_count[id][collision_count[j]]++;
-        }
+        // vector<float> test_all_dist(dataset_size);
 
-        for (int j = 0; j < subspace_num + 1; j++) {
-            for (int z = 0; z < number_of_threads; z++) {
-                collision_num_count[j] += local_collision_num_count[z][j];
-            }
-        }
+        // for (int j = 0; j < dataset_size; j++) {
+        // // candidate_dists[j] = euclidean_distance(querypoints[i], dataset[candidate_idx[j]], data_dimensionality);
+        // // candidate_dists[j] = euclidean_distance_SIMD(querypoints[i], dataset[candidate_idx[j]], data_dimensionality);
+        // test_all_dist[j] = faiss::fvec_L2sqr_avx512(querypoints[i], dataset[j], data_dimensionality);
+        // }
 
-        for (int j = 0; j < number_of_threads; j++) {
-            delete[] local_collision_num_count[j];
-        }
-        delete[] local_collision_num_count;
+
+        // vector<int> test_idx(dataset_size);
+
+        // iota(test_idx.begin(), test_idx.end(), 0);
+        // sort(test_idx.begin(), test_idx.end(), [&test_all_dist](int i1, int i2) {return test_all_dist[i1] < test_all_dist[i2];});
+
+
+        // for(int l = 0; l < dataset_size; l++) {
+        //     outfile << subspace_weight_count[test_idx[l]]<<endl;
+        // }
+        
+
+        // cout << "Test Result of LID weight complete. " << endl;
+        // int * collision_num_count = new int[subspace_num + 1]();
+        // int ** local_collision_num_count = new int * [number_of_threads];
+        // for (int j = 0; j < number_of_threads; j++) {
+        //     local_collision_num_count[j] = new int [subspace_num + 1]();
+        // }
+
+        // #pragma omp parallel for num_threads(number_of_threads)
+        // for (int j = 0; j < dataset_size; j++) {
+        //     int id = omp_get_thread_num();
+        //     local_collision_num_count[id][collision_count[j]]++;
+        // }
+
+        // for (int j = 0; j < subspace_num + 1; j++) {
+        //     for (int z = 0; z < number_of_threads; z++) {
+        //         collision_num_count[j] += local_collision_num_count[z][j];
+        //     }
+        // }
+
+        // for (int j = 0; j < number_of_threads; j++) {
+        //     delete[] local_collision_num_count[j];
+        // }
+        // delete[] local_collision_num_count;
 
         // release the candidate number to include all points in last_collision_num, saving the time for checking points whose collision_num_count is last_collision_num
-        int last_collision_num;
-        int sum_candidate = 0;
-        for (int j = subspace_num; j >= 0; j--) {
-            if (collision_num_count[j] <= candidate_num - sum_candidate) {
-                sum_candidate += collision_num_count[j];
-            } else {
-                last_collision_num = j;
-                break;
-            }
-        }
-        delete[] collision_num_count;
+        // int last_collision_num;
+        // int sum_candidate = 0;
+        // for (int j = subspace_num; j >= 0; j--) {
+        //     if (collision_num_count[j] <= candidate_num - sum_candidate) {
+        //         sum_candidate += collision_num_count[j];
+        //     } else {
+        //         last_collision_num = j;
+        //         break;
+        //     }
+        // }
+        // delete[] collision_num_count;
+
+
+        vector<int> subspace_weight_idx(dataset_size);
+        iota(subspace_weight_idx.begin(), subspace_weight_idx.end(), 0);
+        sort(subspace_weight_idx.begin(), subspace_weight_idx.end(), [&subspace_weight_count](int i1, int i2) {return subspace_weight_count[i1] > subspace_weight_count[i2];});
+
+        float last_candidate_weight = subspace_weight_count[subspace_weight_idx[candidate_num - 1]];
+
+        // for(int l = 0; l < dataset_size; l++) {
+        //     cout  << subspace_weight_idx[l] << ":" <<subspace_weight_count[subspace_weight_idx[l]] << " " << endl;
+        // }
+
+        // exit(1);
 
         vector<int> candidate_idx;
         vector<vector<int>> local_candidate_idx(number_of_threads);
@@ -92,7 +133,7 @@ void ann_query(float ** &dataset, int ** &queryknn_results, long int dataset_siz
         #pragma omp parallel for num_threads(number_of_threads)
         for (int j = 0; j < dataset_size; j++) {
             int id = omp_get_thread_num();
-            if (collision_count[j] >= last_collision_num) {
+            if (subspace_weight_count[j] >= last_candidate_weight) {
                 local_candidate_idx[id].push_back(j);
             }
         }
@@ -141,10 +182,12 @@ void ann_query(float ** &dataset, int ** &queryknn_results, long int dataset_siz
         }
 
         fill(collision_count.begin(), collision_count.end(), 0);
+        fill(subspace_weight_count.begin(), subspace_weight_count.end(), 0.0f);
 
         // cout << "Finish the " << i + 1 << "-th query." << endl;
         ++pd_query;
     }
+    // outfile.close();
 }
 
 
